@@ -120,6 +120,7 @@ def stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration
     for button in buttons:
         if button.text == button_label:
             button.click()
+            time.sleep(1)
             startTime = time.time()
 
             # Add implicit wait here
