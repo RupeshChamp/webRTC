@@ -121,18 +121,12 @@ def stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration
         if button.text == button_label:
             button.click()
             time.sleep(1)
-            startTime = time.time()
-
-            # Add implicit wait here
-            # driver.implicitly_wait(10)
 
             if not os.path.exists("screenshots"):
                 os.makedirs("screenshots")
             screenshot_path = f"screenshots/stream_{resolution[0]}x{resolution[1]}.png"
 
             if is_stream_active(driver, screenshot_path=screenshot_path):
-                endTime = time.time()
-                print(f"Time Diffrence : {endTime - startTime:.2f}sec")
 
                 capture_full_video_frame(driver, screenshot_path)
                 print(f"Streaming successfully at resolution: {button_label}")
