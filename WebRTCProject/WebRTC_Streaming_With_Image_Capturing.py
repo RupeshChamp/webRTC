@@ -3,10 +3,10 @@ import cv2
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.edge.options import Options as EdgeOptions
 import time
 from Camera_Test_Automation_API import Camera_api as ca
-from selenium.webdriver.support.ui import WebDriverWait
 
 
 def get_valid_camera_index(camera_name):
@@ -16,10 +16,9 @@ def get_valid_camera_index(camera_name):
     Returns:
         int: The index of the camera if found, otherwise -1.
     """
-    import cv2 as cv
     import gc
 
-    cap = cv.VideoCapture()
+    cap = cv2.VideoCapture()
     devices = cap.getDevices()
     for i in range(devices[1]):
         if camera_name == cap.getDeviceInfo(i)[1]:
@@ -51,9 +50,13 @@ def log_web_rtc_errors(driver):
     """
     Capture error messages or logs from the WebRTC page.
     """
-    logs = driver.get_log("browser")
-    for entry in logs:
-        print(f"WebRTC Log: {entry['message']}")
+    if "firefox" in driver.capabilities["browserName"].lower():
+        print("Browser logs are not supported for Firefox. Skipping...")
+        return
+    else:
+        logs = driver.get_log("browser")
+        for entry in logs:
+            print(f"WebRTC Log: {entry['message']}")
 
 
 def is_stream_active(driver, screenshot_path=None):
@@ -70,14 +73,9 @@ def is_stream_active(driver, screenshot_path=None):
     """
     try:
         video_element = driver.find_element(By.TAG_NAME, "video")
-        while True:
-
-            if video_element.is_displayed():
-                print("Stream is active.")
-
-                return True
-            else:
-                continue
+        if video_element.is_displayed():
+            print("Stream is active.")
+            return True
     except Exception as e:
         print(f"Stream check failed: {e}")
     return False
@@ -112,7 +110,7 @@ def capture_full_video_frame(driver, save_path):
         print(f"Failed to capture full video frame: {e}")
 
 
-def stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration):
+def stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration, cam_name, browser_name):
     button_label = webrtc_resolutions[resolution]
     buttons = driver.find_elements(By.TAG_NAME, "button")
 
@@ -124,13 +122,11 @@ def stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration
 
             if not os.path.exists("screenshots"):
                 os.makedirs("screenshots")
-            screenshot_path = f"screenshots/stream_{resolution[0]}x{resolution[1]}.png"
+            screenshot_path = f"screenshots/{browser_name}_{cam_name}_stream_{resolution[0]}x{resolution[1]}.jpg"
 
             if is_stream_active(driver, screenshot_path=screenshot_path):
-
                 capture_full_video_frame(driver, screenshot_path)
                 print(f"Streaming successfully at resolution: {button_label}")
-
             else:
                 print(f"Failed to stream at resolution: {button_label}")
             break
@@ -174,28 +170,54 @@ def main(camera_name, duration):
         print("No matching resolutions found between USB camera and WebRTC.")
         return
 
-    chrome_options = Options()
-    chrome_options.add_argument("--use-fake-ui-for-media-stream")
-    chrome_options.add_argument(f"--use-file-for-fake-video-capture=/dev/video{camera_index}")
-    chrome_options.set_capability("goog:loggingPrefs", {"browser": "ALL"})  # Enable browser logging
+    webrtc_url = "https://webrtc.github.io/samples/src/content/getusermedia/resolution/"
 
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.maximize_window()
+    # Testing on multiple browsers
+    browsers = [
+        ("Chrome", Options(), webdriver.Chrome),
+        ("Edge", EdgeOptions(), webdriver.Edge),
+        ("Firefox", FirefoxOptions(), webdriver.Firefox),
+    ]
 
-     # Wait up to 10 seconds for elements to load
+    for browser_name, options, browser_driver in browsers:
+        print(f"Testing on {browser_name}...")
 
-    try:
-        webrtc_url = "https://webrtc.github.io/samples/src/content/getusermedia/resolution/"
-        driver.get(webrtc_url)
+        if browser_name == "Chrome":
+            options.add_argument("--use-fake-ui-for-media-stream")
+            options.set_capability("goog:loggingPrefs", {"browser": "ALL"})
+            options.add_experimental_option("prefs", {
+                "profile.default_content_setting_values.media_stream_camera": 1,
+                "profile.default_content_setting_values.media_stream_mic": 1,
+            })
 
-        for resolution in matched_resolutions:
-            print(f"Attempting to stream in resolution: {resolution}")
-            stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration)
-    finally:
-        driver.quit()
+        elif browser_name == "Edge":
+            options.add_argument("--use-fake-ui-for-media-stream")
+            options.set_capability("goog:loggingPrefs", {"browser": "ALL"})
+            options.add_experimental_option("prefs", {
+                "profile.default_content_setting_values.media_stream_camera": 1,
+                "profile.default_content_setting_values.media_stream_mic": 1,
+            })
+
+        elif browser_name == "Firefox":
+            options = FirefoxOptions()
+            options.set_preference("dom.disable_open_during_load", False)
+            options.set_preference("media.navigator.permission.disabled", True)
+            options.set_preference("media.navigator.streams.fake", False)
+            options.set_preference("privacy.resistFingerprinting", False)
+            options.set_preference("media.getusermedia.screensharing.enabled", True)
+
+        driver = browser_driver(options=options)
+
+        try:
+            driver.get(webrtc_url)
+            for resolution in matched_resolutions:
+                print(f"Attempting to stream in resolution: {resolution}")
+                stream_camera_in_resolution(driver, resolution, webrtc_resolutions, duration, camera_name, browser_name)
+        finally:
+            driver.quit()
 
 
 if __name__ == "__main__":
     camera_name = "See3CAM_CU81"
-    duration = 10
+    duration = 5
     main(camera_name, duration)
